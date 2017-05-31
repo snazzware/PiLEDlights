@@ -65,7 +65,8 @@
 
 
 static unsigned int o_refresh = 20; /* milliseconds */
-static unsigned int o_gpiopin = 11; /* wiringPi numbering scheme */
+static unsigned int o_gpiopin_tx = 4; /* wiringPi numbering scheme */
+static unsigned int o_gpiopin_rx = 5;
 static int o_detach = 0;
 
 static volatile sig_atomic_t running = 1;
@@ -118,27 +119,47 @@ int activity(FILE *netdevices) {
         }
 
         /* Anything changed? */
-        result = (prev_inpackets  != inpackets) ||
-                 (prev_outpackets != outpackets);
+	result = 0;
+        result += (prev_inpackets  != inpackets) ? 1 : 0;
+        result += (prev_outpackets != outpackets) ? 2 : 0;
         prev_inpackets = inpackets;
         prev_outpackets = outpackets;
+
+	
 
         return result;
 }
 
 /* Update the LED */
-void led(int on) {
-        static int current = 1; /* Ensure the LED turns off on first call */
-        if (current == on)
-                return;
+void led(int rx, int tx) {
+	digitalWrite(o_gpiopin_rx, rx > 0);
+	digitalWrite(o_gpiopin_tx, tx > 0);
+	return;
+        static int current_tx = 1; /* Ensure the LED turns off on first call */
+	static int current_rx = 1;
 
-                if (on) {
-                        digitalWrite (o_gpiopin, HIGH);
+	
+
+        if (current_tx != tx){ 
+               
+
+                if (current_tx) {
+                        digitalWrite (o_gpiopin_tx, LOW);
                 } else {
-                        digitalWrite (o_gpiopin, LOW);
+                        digitalWrite (o_gpiopin_tx, HIGH);
                 }
+		current_tx = tx;
+	}
+	if (current_rx != rx) {
+		if (current_rx) {
+                        digitalWrite (o_gpiopin_rx, LOW);
+                } else {
+                        digitalWrite (o_gpiopin_rx, HIGH);
+                }
+                current_rx = rx;
+	}
 
-        current = on;
+        
 }
 
 /* Signal handler -- break out of the main loop */
@@ -159,10 +180,10 @@ error_t parse_options(int key, char *arg, struct argp_state *state) {
                                 "refresh interval must be at least 10");
                 break;
         case 'p':
-                o_gpiopin = strtol(arg, NULL, 10);
+                /*o_gpiopin = strtol(arg, NULL, 10);
                 if ((o_gpiopin < 0) || (o_gpiopin > 29))
                         argp_failure(state, EXIT_FAILURE, 0,
-                                "pin number must be between 0 and 29");
+                                "pin number must be between 0 and 29");*/
                 break;
         }
         return 0;
@@ -193,7 +214,8 @@ int main(int argc, char **argv) {
         delay.tv_nsec = 1000000 * (o_refresh % 1000);
 
         wiringPiSetup () ;
-        pinMode (o_gpiopin, OUTPUT) ;
+        pinMode (o_gpiopin_tx, OUTPUT) ;
+	pinMode (o_gpiopin_rx, OUTPUT);
 
 
         /* Open the netdevices file */
@@ -204,7 +226,7 @@ int main(int argc, char **argv) {
         }
 
         /* Ensure the LED is off */
-        led(LOW);
+        led(0, 0);
 
         /* Save the current I/O stat values */
         if (activity(netdevices) < 0)
@@ -244,11 +266,11 @@ int main(int argc, char **argv) {
                 a = activity(netdevices);
                 if (a < 0)
                         break;
-                led(a);
+                led((a & 1), (a & 2));
         }
 
         /* Ensure the LED is off */
-        led(LOW);
+        led(0,0);
 
         status = EXIT_SUCCESS;
 
